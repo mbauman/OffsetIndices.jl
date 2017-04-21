@@ -4,42 +4,43 @@
 
 Tech demo for zero-indexing (and maybe other offset indexing) support using custom index types.  The special `ZeroIndex` type flags an index as an offset from 0. Instead of the verbose `ZeroIndex(0)` spelling, the alias `Z` is exported and juxtaposed multiplication is supported such that `5Z == ZeroIndex(5)`:
 
-```jl
-julia> A = reshape(1:60, 3,4,5);
+```julia
+julia> A = reshape(collect(1:60), 4, 5, 3);
 
 julia> A[0Z,0Z,0Z]
 1
 
-julia> A[2Z,3Z,4Z]
+julia> A[3Z,4Z,2Z]
 60
 
 julia> A[[0Z,2Z],:,0Z]
-2×4 Array{Int64,2}:
- 1  4  7  10
- 3  6  9  12
+2×5 Array{Int64,2}:
+ 1  5   9  13  17
+ 3  7  11  15  19
  
-julia> sub(A, 0Z, :, [0Z, 1Z])
-1×4×2 SubArray{Int64,3,Base.ReshapedArray{Int64,3,UnitRange{Int64},Tuple{}},Tuple{Base.NoSlice,Colon,Array{OffsetIndices.ZeroIndex,1}},false}:
-[:, :, 1] =
- 1  4  7  10
-
-[:, :, 2] =
- 13  16  19  22
+julia> view(A, 0Z, :, [0Z, 1Z])
+5×2 SubArray{Int64,2,Array{Int64,3},Tuple{Int64,Base.Slice{Base.OneTo{Int64}},Array{Int64,1}},false}:
+  1  21
+  5  25
+  9  29
+ 13  33
+ 17  37
 ```
 
 There's also a `@zeroindexing` macro that automatically wraps indices with the ZeroIndex type:
 
 ```
-julia> @zeroindexing A[2,3,4]
+julia> @zeroindexing A[3,4,2]
 60
 
 julia> @zeroindexing A[0,:,0]
-4-element Array{Int64,1}:
+5-element Array{Int64,1}:
   1
-  4
-  7
- 10
-
+  5
+  9
+ 13
+ 17
+ 
 julia> @zeroindexing for i=0:2
            println(A[i, 0, 0])
        end
@@ -55,23 +56,20 @@ julia> f(A, i1, i2, i3) = @inbounds return A[i1,i2,i3]
        A = rand(3,3,3)
        @code_native f(A, 1,1,1)
 	.section	__TEXT,__text,regular,pure_instructions
-Filename: REPL[28]
-Source line: 0
+Filename: REPL[5]
 	pushq	%rbp
 	movq	%rsp, %rbp
 	movq	(%rdi), %rax
 Source line: 1
-	addq	$-1, %rdx
-	addq	$-1, %rcx
+	decq	%rcx
 	imulq	32(%rdi), %rcx
-	addq	%rdx, %rcx
+	leaq	-1(%rdx,%rcx), %rcx
 	imulq	24(%rdi), %rcx
-	addq	$-1, %rsi
-	addq	%rcx, %rsi
-	movsd	(%rax,%rsi,8), %xmm0    ## xmm0 = mem[0],zero
+	addq	%rsi, %rcx
+	movsd	-8(%rax,%rcx,8), %xmm0  ## xmm0 = mem[0],zero
 	popq	%rbp
 	retq
-	nopw	(%rax,%rax)
+	nopw	%cs:(%rax,%rax)
 
 julia> @code_native f(A, 0Z, 0Z, 0Z)
 	.section	__TEXT,__text,regular,pure_instructions
